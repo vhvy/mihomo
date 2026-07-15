@@ -8,7 +8,7 @@ name: Auto Merge & Build
 
 on:
   schedule:
-    - cron: '0 2 * * *'      # 每天 UTC 02:00（北京时间 10:00）
+    - cron: '17 18 * * *'    # 错峰避开整点；UTC 18:17 = 北京时间次日 02:17
   workflow_dispatch:          # 也可在 Actions 页面手动触发
 
 concurrency:
@@ -59,7 +59,7 @@ jobs:
             ./listener/... ./config/... ./constant/...
 
       - name: 登录镜像仓库
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ secrets.ALIYUN_REGISTRY }}
           username: ${{ secrets.ALIYUN_USERNAME }}
