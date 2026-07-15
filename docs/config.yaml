@@ -2312,6 +2312,24 @@ listeners:
     #    - h3
     #  max-udp-relay-packet-size: 1500
 
+  # wireguard 入站（服务端）：客户端/路由器通过 WireGuard 隧道把流量送入 mihomo，
+  # 解包后按普通入站流程交给规则引擎；保留真实客户端隧道源 IP（SRC-IP-CIDR 可用），转发路径不引入 NAT
+  - name: wireguard-in-1
+    type: wireguard
+    port: 51820 # 监听的 UDP 端口，支持使用 ports 格式，例如 200,302 or 200,204,401-429,501-503
+    listen: 0.0.0.0
+    # routing-mark: 0 # 为监听socket设置routing-mark（仅支持linux）
+    # rule: sub-rule-name1 # 默认使用 rules，如果未找到 sub-rule 则直接使用 rules
+    # proxy: proxy # 如果不为空则直接将该入站流量交由指定 proxy 处理 (当 proxy 不为空时，这里的 proxy 名称必须合法，否则会出错)
+    private-key: eCtXsJZ27+4PbhDkHnB923tkUn2Gj59wZw5wFA75MnU= # 本端（服务端）私钥，base64 编码
+    ip: 10.0.0.1 # 本端隧道地址（IPv4），至少填写 ip 或 ipv6 其中之一
+    # ipv6: fd00::1 # 本端隧道地址（IPv6）
+    # mtu: 1408 # 最大传输单元，默认 1408
+    peers: # 允许接入的对端（客户端）列表
+      - public-key: Cr8hWlKvtDt7nrvf+f0brNQQzabAqrjfBvas9pmowjo= # 对端公钥，base64 编码
+        # pre-shared-key: 31aIhAPwktDGpH4JDhA8GNvjFXEf/a6+UaQRyOAiyfM= # 可选，预共享密钥
+        allowed-ips: ['10.0.0.2/32'] # 对端隧道地址，作为该对端的源 IP 过滤与回程路由
+
   - name: shadowquic-in-1
     type: shadowquic
     port: 10822 # 支持使用ports格式，例如200,302 or 200,204,401-429,501-503

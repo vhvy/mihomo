@@ -1,0 +1,105 @@
+name: Auto Merge & Build
+
+# 定时把上游 Alpha 合并进本功能分支（仅临时合并用于构建，不改写分支历史），
+# 编译 + 测试通过后构建并推送 Docker 镜像；任一步失败则开 Issue 通知，不发布坏镜像。
+#
+# 所有私密信息（registry / 账号 / 密码 / 命名空间）均来自 GitHub Secrets，
+# 本文件不含任何私密值，可安全放在公开仓库。
+
+on:
+  schedule:
+    - cron: '0 2 * * *'      # 每天 UTC 02:00（北京时间 10:00）
+  workflow_dispatch:          # 也可在 Actions 页面手动触发
+
+concurrency:
+  group: auto-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout 功能分支
+        uses: actions/checkout@v4
+        with:
+          ref: feat/wireguard-inbound
+          fetch-depth: 0
+
+      - name: 临时合并上游 Alpha（冲突则失败）
+        run: |
+          git config user.name  "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git remote add upstream https://github.com/MetaCubeX/mihomo.git
+          git fetch --no-tags upstream Alpha
+          # 仅在本次 runner 内做合并用于构建，不 push 回分支。
+          if ! git merge --no-edit upstream/Alpha; then
+            echo "::error::与上游 Alpha 合并冲突，需要手动 rebase 解决"
+            git merge --abort || true
+            exit 1
+          fi
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'      # go.mod 最低 1.20；本地用 1.24 验证过
+
+      - name: 编译检查（功能失效第一道防线）
+        run: go build -tags with_gvisor ./...
+
+      - name: 运行测试
+        env:
+          SKIP_CONCURRENT_TEST: '1'
+          SKIP_INTEROP_TEST: '1'
+        run: |
+          # 重点测试你的功能相关包；如需全量可改成 ./...
+          go test -tags with_gvisor -count=1 \
+            ./listener/... ./config/... ./constant/...
+
+      - name: 登录镜像仓库
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ALIYUN_REGISTRY }}
+          username: ${{ secrets.ALIYUN_USERNAME }}
+          password: ${{ secrets.ALIYUN_PASSWORD }}
+
+      - name: 构建并推送镜像
+        env:
+          IMAGE: ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.IMAGE_NAME }}
+          PUSH: 'true'
+        run: bash scripts/build-image.sh
+
+  # 上面任一步失败（合并冲突 / 编译失败 / 测试不过）都通知
+  notify-on-failure:
+    needs: build
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: 开 Issue 提醒
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().slice(0, 10);
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `⚠️ 自动构建失败 ${today}`,
+              body: [
+                '自动同步上游 / 编译 / 测试 / 构建镜像 过程中失败。',
+                '可能原因：与上游 Alpha 合并冲突，或上游改动导致 wireguard 功能编译/测试失败。',
+                '',
+                `查看日志: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                '若为合并冲突，本地解决：',
+                '```',
+                'git fetch upstream Alpha',
+                'git checkout feat/wireguard-inbound',
+                'git rebase upstream/Alpha   # 解决 metadata.go / parse.go / config.yaml 冲突',
+                'git push --force-with-lease origin feat/wireguard-inbound',
+                '```',
+              ].join('\n'),
+            });

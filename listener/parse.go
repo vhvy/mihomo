@@ -175,6 +175,13 @@ func ParseListener(mapping map[string]any) (C.InboundListener, error) {
 			return nil, err
 		}
 		listener, err = IN.NewTrustTunnel(trusttunnelOption)
+	case "wireguard":
+		wireguardOption := &IN.WireGuardOption{}
+		err = decoder.Decode(mapping, wireguardOption)
+		if err != nil {
+			return nil, err
+		}
+		listener, err = IN.NewWireGuard(wireguardOption)
 	default:
 		return nil, fmt.Errorf("unsupport proxy type: %s", proxyType)
 	}
