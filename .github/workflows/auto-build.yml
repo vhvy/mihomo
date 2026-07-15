@@ -23,7 +23,7 @@ jobs:
       issues: write
     steps:
       - name: Checkout 功能分支
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: feat/wireguard-inbound
           fetch-depth: 0
@@ -42,7 +42,7 @@ jobs:
           fi
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version: '1.24'      # go.mod 最低 1.20；本地用 1.24 验证过
 
