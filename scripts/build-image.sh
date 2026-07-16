@@ -27,7 +27,10 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_DIR}"
 
 # ---------- 生成标签与版本 ----------
-COMMIT_HASH="$(git rev-parse --short HEAD)"
+# COMMIT_HASH 可由外部传入：CI 在临时合并上游后构建，此时 HEAD 是一个只存在于
+# runner、不会 push 的 merge commit，用它打 tag 无法追溯；workflow 会传入
+# “功能分支 hash + 上游 hash”的组合。未传入时默认取当前 HEAD（本地构建）。
+COMMIT_HASH="${COMMIT_HASH:-$(git rev-parse --short HEAD)}"
 BUILD_DATE="$(date +%Y%m%d)"
 TAG="${COMMIT_HASH}-${BUILD_DATE}"
 

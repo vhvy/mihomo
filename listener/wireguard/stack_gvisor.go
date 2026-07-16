@@ -176,6 +176,11 @@ func (w *stackDevice) Write(bufs [][]byte, offset int) (count int, err error) {
 			networkProtocol = header.IPv4ProtocolNumber
 		case header.IPv6Version:
 			networkProtocol = header.IPv6ProtocolNumber
+		default:
+			// WireGuard only authenticates the sender; a peer can still emit
+			// frames that are not valid IP packets. Drop them instead of
+			// delivering them with a zero protocol number.
+			continue
 		}
 		packetBuffer := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: buffer.MakeWithData(b),
@@ -212,6 +217,17 @@ func (w *stackDevice) Close() error {
 			endpoint.Abort()
 		}
 		w.stack.Wait()
+		// After stack.Wait() no WritePackets sender remains and Read has
+		// stopped consuming (ctx is canceled), so release any packets still
+		// queued in outbound.
+		for {
+			select {
+			case packetBuffer := <-w.outbound:
+				packetBuffer.DecRef()
+			default:
+				return
+			}
+		}
 	})
 	return nil
 }
@@ -274,9 +290,12 @@ func (ep *wireEndpoint) ParseHeader(ptr *stack.PacketBuffer) bool {
 
 func (ep *wireEndpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Error) {
 	for _, packetBuffer := range list.AsSlice() {
+		// IncRef must happen before the channel send: once queued, Read may
+		// consume and DecRef the buffer at any moment.
 		packetBuffer.IncRef()
 		select {
 		case <-ep.ctx.Done():
+			packetBuffer.DecRef()
 			return 0, &tcpip.ErrClosedForSend{}
 		case ep.outbound <- packetBuffer:
 		}

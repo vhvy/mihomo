@@ -32,8 +32,12 @@ jobs:
         run: |
           git config user.name  "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
+          # 记录功能分支与上游各自的 tip，供镜像 tag 追溯——合并产生的
+          # merge commit 只存在于本次 runner，不会 push，不能用作 tag。
+          echo "FEAT_HASH=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
           git remote add upstream https://github.com/MetaCubeX/mihomo.git
           git fetch --no-tags upstream Alpha
+          echo "UPSTREAM_HASH=$(git rev-parse --short upstream/Alpha)" >> "$GITHUB_ENV"
           # 仅在本次 runner 内做合并用于构建，不 push 回分支。
           if ! git merge --no-edit upstream/Alpha; then
             echo "::error::与上游 Alpha 合并冲突，需要手动 rebase 解决"
@@ -69,6 +73,9 @@ jobs:
         env:
           IMAGE: ${{ secrets.ALIYUN_REGISTRY }}/${{ secrets.IMAGE_NAME }}
           PUSH: 'true'
+          # 用两个真实存在的 commit 标识镜像（功能分支 tip + 上游 Alpha tip），
+          # 替代 runner 内临时 merge commit 的 hash
+          COMMIT_HASH: ${{ env.FEAT_HASH }}-alpha.${{ env.UPSTREAM_HASH }}
         run: bash scripts/build-image.sh
 
   # 上面任一步失败（合并冲突 / 编译失败 / 测试不过）都通知
