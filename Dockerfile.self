@@ -34,7 +34,9 @@ RUN apk add --no-cache wget && \
 # ============ 阶段 3: 最终运行镜像 ============
 FROM alpine:latest
 
-LABEL org.opencontainers.image.source="https://github.com/MetaCubeX/mihomo"
+# 指向本 fork 而非上游：镜像里带的是自有补丁（wireguard 入站），
+# 溯源链接必须能找到实际构建用的源码。
+LABEL org.opencontainers.image.source="https://github.com/vhvy/mihomo"
 
 RUN apk add --no-cache ca-certificates tzdata iptables
 
