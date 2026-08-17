@@ -19,8 +19,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      issues: write
+      contents: read      # 本 job 不开 Issue，开 Issue 由 notify-on-failure 负责
     steps:
       - name: Checkout 功能分支
         uses: actions/checkout@v7
@@ -48,10 +47,16 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: '1.24'      # go.mod 最低 1.20；本地用 1.24 验证过
+          # go.mod 声明 go 1.20，全部依赖声明的最高版本也只有 1.20，所以 1.24 足够。
+          # 本地开发用的是 go1.26.5，上游 CI 矩阵覆盖 1.20~1.26。
+          go-version: '1.24'
 
       - name: 编译检查（功能失效第一道防线）
-        run: go build -tags with_gvisor ./...
+        run: |
+          # 两轮都要跑：wireguard 入站在无 with_gvisor 时走 stack_stub.go，
+          # 只跑带 tag 那轮会漏掉 stub 路径的编译错误（上游 CI 同样跑两轮）。
+          go build -tags with_gvisor ./...
+          go build ./...
 
       - name: 运行测试
         env:
@@ -59,7 +64,11 @@ jobs:
           SKIP_INTEROP_TEST: '1'
         run: |
           # 重点测试你的功能相关包；如需全量可改成 ./...
+          # 无 tag 那轮里 TestInboundWireGuard 应当 SKIP（features.WithGVisor 判断），
+          # 若变成 FAIL 说明 skip 逻辑丢失，会在上游 CI 的无 tag 轮次里翻车。
           go test -tags with_gvisor -count=1 \
+            ./listener/... ./config/... ./constant/...
+          go test -count=1 \
             ./listener/... ./config/... ./constant/...
 
       - name: 登录镜像仓库
@@ -90,16 +99,43 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
+            // 定时任务每天都会跑，上游一旦引入 breaking change 就会天天失败。
+            // 已有未关闭的同类 Issue 时只追加评论，避免每天开一个新 Issue。
+            const label = 'auto-build-failure';
             const today = new Date().toISOString().slice(0, 10);
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+
+            const existing = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: label,
+            });
+            // listForRepo 也会返回 PR，按 label 过滤后基本不会命中，仍显式排除
+            const openIssue = existing.data.find(i => !i.pull_request);
+
+            if (openIssue) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: openIssue.number,
+                body: `⚠️ ${today} 再次失败: ${runUrl}`,
+              });
+              return;
+            }
+
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
               title: `⚠️ 自动构建失败 ${today}`,
+              labels: [label],   // label 不存在时会由本次调用自动创建
               body: [
                 '自动同步上游 / 编译 / 测试 / 构建镜像 过程中失败。',
                 '可能原因：与上游 Alpha 合并冲突，或上游改动导致 wireguard 功能编译/测试失败。',
                 '',
-                `查看日志: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                `查看日志: ${runUrl}`,
+                '',
+                '后续失败会以评论形式追加到本 Issue，修好后请手动关闭。',
                 '',
                 '若为合并冲突，本地解决：',
                 '```',
