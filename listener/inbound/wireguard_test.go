@@ -15,6 +15,7 @@ import (
 	"github.com/metacubex/mihomo/component/dialer"
 	"github.com/metacubex/mihomo/component/generator"
 	C "github.com/metacubex/mihomo/constant"
+	"github.com/metacubex/mihomo/constant/features"
 	"github.com/metacubex/mihomo/listener/inbound"
 
 	"github.com/stretchr/testify/assert"
@@ -210,6 +211,9 @@ func testInboundWireGuard(t *testing.T, preSharedKey string) {
 }
 
 func TestInboundWireGuard(t *testing.T) {
+	if !features.WithGVisor {
+		t.Skip("WireGuard inbound requires the with_gvisor build tag")
+	}
 	t.Run("Plain", func(t *testing.T) {
 		testInboundWireGuard(t, "")
 	})

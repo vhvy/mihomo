@@ -15,6 +15,7 @@ import (
 	"github.com/metacubex/mihomo/log"
 
 	E "github.com/metacubex/sing/common/exceptions"
+	wireguard "github.com/metacubex/sing-wireguard"
 	"github.com/metacubex/wireguard-go/device"
 )
 
@@ -99,7 +100,7 @@ func New(config LC.WireGuardServer, lc C.InboundListenConfig, tunnel C.Tunnel, a
 		// *sing.ListenerHandler satisfies forwardHandler, so the real client tunnel
 		// address is carried through as the connection source (no NAT), and traffic
 		// follows the normal rule engine like other inbounds.
-		if err = tunDevice.RegisterForward(h); err != nil {
+		if err = tunDevice.RegisterForward(wireguard.ForwardOptions{Handler: h}); err != nil {
 			_ = sl.Close()
 			return nil, E.Cause(err, "register WireGuard forward")
 		}
